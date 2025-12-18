@@ -96,6 +96,27 @@ async def register_user(line_user_id: str, display_name: Optional[str] = None) -
         return user
 
 
+async def ensure_user_registered(line_user_id: str) -> User:
+    """ユーザーが未登録の場合は登録する（サイレント登録）"""
+    async with async_session() as session:
+        result = await session.execute(
+            select(User).where(User.line_user_id == line_user_id)
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            user = User(
+                id=str(uuid.uuid4()),
+                line_user_id=line_user_id,
+                is_active=True,
+            )
+            session.add(user)
+            await session.commit()
+            print(f"[ensure_user_registered] New user registered: {line_user_id}")
+
+        return user
+
+
 async def deactivate_user(line_user_id: str) -> None:
     """ユーザー無効化（unfollow時）"""
     async with async_session() as session:
@@ -109,8 +130,12 @@ async def deactivate_user(line_user_id: str) -> None:
             await session.commit()
 
 
-async def add_favorite(line_user_id: str, article_id: str) -> bool:
-    """お気に入り追加"""
+async def add_favorite(line_user_id: str, article_id: str) -> tuple[bool, str]:
+    """お気に入り追加
+
+    Returns:
+        tuple[bool, str]: (成功/失敗, エラーメッセージ)
+    """
     async with async_session() as session:
         # ユーザー取得
         result = await session.execute(
@@ -118,7 +143,8 @@ async def add_favorite(line_user_id: str, article_id: str) -> bool:
         )
         user = result.scalar_one_or_none()
         if not user:
-            return False
+            print(f"[add_favorite] User not found: {line_user_id}")
+            return False, "user_not_found"
 
         # 記事存在確認
         result = await session.execute(
@@ -126,7 +152,8 @@ async def add_favorite(line_user_id: str, article_id: str) -> bool:
         )
         article = result.scalar_one_or_none()
         if not article:
-            return False
+            print(f"[add_favorite] Article not found: {article_id}")
+            return False, "article_not_found"
 
         # 重複チェック
         result = await session.execute(
@@ -136,7 +163,8 @@ async def add_favorite(line_user_id: str, article_id: str) -> bool:
             )
         )
         if result.scalar_one_or_none():
-            return False  # 既に登録済み
+            print(f"[add_favorite] Already favorited: user={user.id}, article={article_id}")
+            return False, "already_favorited"
 
         favorite = Favorite(
             id=str(uuid.uuid4()),
@@ -145,7 +173,8 @@ async def add_favorite(line_user_id: str, article_id: str) -> bool:
         )
         session.add(favorite)
         await session.commit()
-        return True
+        print(f"[add_favorite] Success: user={user.id}, article={article_id}")
+        return True, "success"
 
 
 async def remove_favorite(line_user_id: str, article_id: str) -> bool:

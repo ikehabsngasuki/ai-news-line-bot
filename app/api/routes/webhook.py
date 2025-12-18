@@ -12,6 +12,7 @@ from app.services.line_service import (
     add_favorite,
     remove_favorite,
     get_user_favorites,
+    ensure_user_registered,
 )
 from app.utils.flex_message import create_favorites_list
 
@@ -66,9 +67,13 @@ async def handle_event(event: dict) -> None:
         await handle_unfollow(user_id)
 
     elif event_type == "message":
+        # メッセージ受信時にユーザーを自動登録（未登録の場合）
+        await ensure_user_registered(user_id)
         await handle_message(event, user_id)
 
     elif event_type == "postback":
+        # Postback時もユーザーを自動登録
+        await ensure_user_registered(user_id)
         await handle_postback(event, user_id)
 
 
@@ -130,11 +135,18 @@ async def handle_postback(event: dict, user_id: str) -> None:
     article_id = params.get("article_id")
 
     if action == "favorite" and article_id:
-        success = await add_favorite(user_id, article_id)
+        success, reason = await add_favorite(user_id, article_id)
         if success:
             await send_text_message(user_id, "お気に入りに追加しました!")
         else:
-            await send_text_message(user_id, "既に追加済みか、記事が見つかりません。")
+            if reason == "user_not_found":
+                await send_text_message(user_id, "ユーザー情報が見つかりません。友だち追加し直してください。")
+            elif reason == "article_not_found":
+                await send_text_message(user_id, "記事が見つかりません。再度ニュースを取得してからお試しください。")
+            elif reason == "already_favorited":
+                await send_text_message(user_id, "この記事は既にお気に入りに追加済みです。")
+            else:
+                await send_text_message(user_id, "お気に入りの追加に失敗しました。")
 
     elif action == "unfavorite" and article_id:
         success = await remove_favorite(user_id, article_id)

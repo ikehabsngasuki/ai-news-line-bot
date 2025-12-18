@@ -116,37 +116,53 @@ async def _save_articles_to_db(articles):
     """記事をDBに保存（お気に入り用）"""
     from sqlalchemy import select
 
-    async with async_session() as session:
-        for article in articles:
-            article_id = _generate_article_id(article.url)
+    print(f"[_save_articles_to_db] Saving {len(articles)} articles to DB...")
 
-            # 既存チェック
-            result = await session.execute(
-                select(Article).where(Article.id == article_id)
-            )
-            existing = result.scalar_one_or_none()
+    try:
+        async with async_session() as session:
+            saved_count = 0
+            updated_count = 0
 
-            if existing:
-                # スコア更新
-                existing.popularity_score = article.popularity_score
-                existing.hatena_count = article.hatena_count
-                existing.hackernews_score = article.hackernews_score
-            else:
-                # 新規作成
-                new_article = Article(
-                    id=article_id,
-                    url=article.url,
-                    title=article.title,
-                    summary=article.summary,
-                    source=article.source,
-                    thumbnail_url=article.thumbnail_url,
-                    popularity_score=article.popularity_score,
-                    hatena_count=article.hatena_count,
-                    hackernews_score=article.hackernews_score,
-                    reddit_score=article.reddit_score,
-                    source_count=article.source_count,
-                    published_at=article.published_at,
+            for article in articles:
+                article_id = _generate_article_id(article.url)
+                print(f"[_save_articles_to_db] Processing: {article_id} - {article.title[:30]}...")
+
+                # 既存チェック
+                result = await session.execute(
+                    select(Article).where(Article.id == article_id)
                 )
-                session.add(new_article)
+                existing = result.scalar_one_or_none()
 
-        await session.commit()
+                if existing:
+                    # スコア更新
+                    existing.popularity_score = article.popularity_score
+                    existing.hatena_count = article.hatena_count
+                    existing.hackernews_score = article.hackernews_score
+                    updated_count += 1
+                else:
+                    # 新規作成
+                    new_article = Article(
+                        id=article_id,
+                        url=article.url,
+                        title=article.title,
+                        summary=article.summary,
+                        source=article.source,
+                        thumbnail_url=article.thumbnail_url,
+                        popularity_score=article.popularity_score,
+                        hatena_count=article.hatena_count,
+                        hackernews_score=article.hackernews_score,
+                        reddit_score=article.reddit_score,
+                        source_count=article.source_count,
+                        published_at=article.published_at,
+                    )
+                    session.add(new_article)
+                    saved_count += 1
+
+            await session.commit()
+            print(f"[_save_articles_to_db] Complete: {saved_count} new, {updated_count} updated")
+
+    except Exception as e:
+        print(f"[_save_articles_to_db] ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
