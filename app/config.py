@@ -1,19 +1,6 @@
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from functools import lru_cache
-import os
-
-
-def get_database_url() -> str:
-    """データベースURLを取得（Railway対応）"""
-    url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./dev.db")
-
-    # RailwayのPostgreSQL URLを非同期用に変換
-    if url.startswith("postgres://"):
-        url = url.replace("postgres://", "postgresql+asyncpg://", 1)
-    elif url.startswith("postgresql://"):
-        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
-
-    return url
 
 
 class Settings(BaseSettings):
@@ -22,7 +9,17 @@ class Settings(BaseSettings):
     line_channel_secret: str = ""
 
     # Database
-    database_url: str = get_database_url()
+    database_url: str = "sqlite+aiosqlite:///./dev.db"
+
+    @field_validator("database_url", mode="after")
+    @classmethod
+    def convert_database_url(cls, v: str) -> str:
+        """RailwayのPostgreSQL URLを非同期用に変換"""
+        if v.startswith("postgres://"):
+            return v.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif v.startswith("postgresql://") and "+asyncpg" not in v:
+            return v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return v
 
     # Application
     app_env: str = "development"
