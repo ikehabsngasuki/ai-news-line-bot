@@ -3,6 +3,7 @@ from typing import List, TYPE_CHECKING
 if TYPE_CHECKING:
     from app.services.social_scorer import ScoredArticle
     from app.models.article import Article
+    from app.models.user_settings import UserSettings
 
 
 def create_news_carousel(articles: List["ScoredArticle"]) -> dict:
@@ -206,3 +207,344 @@ def _generate_article_id(url: str) -> str:
     """URLからarticle_idを生成"""
     import hashlib
     return hashlib.md5(url.encode()).hexdigest()[:16]
+
+
+# ==================== 設定UI ====================
+
+def create_settings_menu(settings: "UserSettings") -> dict:
+    """設定メニューFlex Message"""
+    from app.models.user_settings import CATEGORY_LABELS, LANGUAGE_LABELS
+
+    return {
+        "type": "bubble",
+        "size": "kilo",
+        "header": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {
+                    "type": "text",
+                    "text": "設定",
+                    "weight": "bold",
+                    "size": "lg",
+                    "color": "#FFFFFF",
+                }
+            ],
+            "backgroundColor": "#4A90D9",
+            "paddingAll": "12px",
+        },
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                # 配信時間
+                {
+                    "type": "box",
+                    "layout": "horizontal",
+                    "contents": [
+                        {
+                            "type": "text",
+                            "text": "配信時間",
+                            "size": "sm",
+                            "color": "#555555",
+                            "flex": 3,
+                        },
+                        {
+                            "type": "text",
+                            "text": f"{settings.delivery_hour}:00",
+                            "size": "sm",
+                            "color": "#111111",
+                            "weight": "bold",
+                            "flex": 2,
+                            "align": "end",
+                        }
+                    ],
+                    "margin": "md",
+                },
+                {
+                    "type": "button",
+                    "action": {
+                        "type": "postback",
+                        "label": "時間を変更",
+                        "data": "action=show_time_selector",
+                    },
+                    "style": "secondary",
+                    "height": "sm",
+                    "margin": "sm",
+                },
+                {
+                    "type": "separator",
+                    "margin": "lg",
+                },
+                # カテゴリ
+                {
+                    "type": "box",
+                    "layout": "horizontal",
+                    "contents": [
+                        {
+                            "type": "text",
+                            "text": "カテゴリ",
+                            "size": "sm",
+                            "color": "#555555",
+                            "flex": 3,
+                        },
+                        {
+                            "type": "text",
+                            "text": settings.get_categories_label(),
+                            "size": "sm",
+                            "color": "#111111",
+                            "weight": "bold",
+                            "flex": 2,
+                            "align": "end",
+                        }
+                    ],
+                    "margin": "lg",
+                },
+                {
+                    "type": "button",
+                    "action": {
+                        "type": "postback",
+                        "label": "カテゴリを変更",
+                        "data": "action=show_category_selector",
+                    },
+                    "style": "secondary",
+                    "height": "sm",
+                    "margin": "sm",
+                },
+                {
+                    "type": "separator",
+                    "margin": "lg",
+                },
+                # 言語
+                {
+                    "type": "box",
+                    "layout": "horizontal",
+                    "contents": [
+                        {
+                            "type": "text",
+                            "text": "言語",
+                            "size": "sm",
+                            "color": "#555555",
+                            "flex": 3,
+                        },
+                        {
+                            "type": "text",
+                            "text": settings.get_language_label(),
+                            "size": "sm",
+                            "color": "#111111",
+                            "weight": "bold",
+                            "flex": 2,
+                            "align": "end",
+                        }
+                    ],
+                    "margin": "lg",
+                },
+                {
+                    "type": "button",
+                    "action": {
+                        "type": "postback",
+                        "label": "言語を変更",
+                        "data": "action=show_language_selector",
+                    },
+                    "style": "secondary",
+                    "height": "sm",
+                    "margin": "sm",
+                },
+            ],
+            "paddingAll": "12px",
+        },
+    }
+
+
+def create_time_selector() -> dict:
+    """配信時間選択Flex Message（時間帯ごとに分割）"""
+    time_groups = [
+        ("深夜・早朝", list(range(0, 6))),
+        ("朝", list(range(6, 12))),
+        ("午後", list(range(12, 18))),
+        ("夜", list(range(18, 24))),
+    ]
+
+    bubbles = []
+    for group_name, hours in time_groups:
+        buttons = []
+        for hour in hours:
+            buttons.append({
+                "type": "button",
+                "action": {
+                    "type": "postback",
+                    "label": f"{hour}:00",
+                    "data": f"action=set_hour&hour={hour}",
+                },
+                "style": "secondary",
+                "height": "sm",
+                "margin": "sm",
+            })
+
+        bubble = {
+            "type": "bubble",
+            "size": "kilo",
+            "header": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": f"配信時間 - {group_name}",
+                        "weight": "bold",
+                        "size": "sm",
+                        "color": "#FFFFFF",
+                    }
+                ],
+                "backgroundColor": "#4A90D9",
+                "paddingAll": "10px",
+            },
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": buttons,
+                "paddingAll": "8px",
+            },
+        }
+        bubbles.append(bubble)
+
+    return {
+        "type": "carousel",
+        "contents": bubbles,
+    }
+
+
+def create_category_selector(settings: "UserSettings") -> dict:
+    """カテゴリ選択Flex Message"""
+    from app.models.user_settings import CATEGORY_LABELS
+
+    current_categories = settings.get_categories()
+
+    buttons = []
+    for cat_key, cat_label in CATEGORY_LABELS.items():
+        is_selected = cat_key in current_categories
+        buttons.append({
+            "type": "button",
+            "action": {
+                "type": "postback",
+                "label": f"{'[ON] ' if is_selected else '[OFF] '}{cat_label}",
+                "data": f"action=toggle_category&category={cat_key}",
+            },
+            "style": "primary" if is_selected else "secondary",
+            "height": "sm",
+            "margin": "sm",
+        })
+
+    # 戻るボタン
+    buttons.append({
+        "type": "button",
+        "action": {
+            "type": "postback",
+            "label": "設定に戻る",
+            "data": "action=settings",
+        },
+        "style": "link",
+        "height": "sm",
+        "margin": "lg",
+    })
+
+    return {
+        "type": "bubble",
+        "size": "kilo",
+        "header": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {
+                    "type": "text",
+                    "text": "カテゴリ選択",
+                    "weight": "bold",
+                    "size": "md",
+                    "color": "#FFFFFF",
+                },
+                {
+                    "type": "text",
+                    "text": "興味のあるカテゴリをON/OFFしてください",
+                    "size": "xs",
+                    "color": "#FFFFFF",
+                    "margin": "sm",
+                }
+            ],
+            "backgroundColor": "#4A90D9",
+            "paddingAll": "12px",
+        },
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": buttons,
+            "paddingAll": "12px",
+        },
+    }
+
+
+def create_language_selector(settings: "UserSettings") -> dict:
+    """言語選択Flex Message"""
+    from app.models.user_settings import LANGUAGE_LABELS
+
+    current_lang = settings.language
+
+    buttons = []
+    for lang_key, lang_label in LANGUAGE_LABELS.items():
+        is_selected = lang_key == current_lang
+        buttons.append({
+            "type": "button",
+            "action": {
+                "type": "postback",
+                "label": f"{'● ' if is_selected else ''}{lang_label}",
+                "data": f"action=set_language&lang={lang_key}",
+            },
+            "style": "primary" if is_selected else "secondary",
+            "height": "sm",
+            "margin": "sm",
+        })
+
+    # 戻るボタン
+    buttons.append({
+        "type": "button",
+        "action": {
+            "type": "postback",
+            "label": "設定に戻る",
+            "data": "action=settings",
+        },
+        "style": "link",
+        "height": "sm",
+        "margin": "lg",
+    })
+
+    return {
+        "type": "bubble",
+        "size": "kilo",
+        "header": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {
+                    "type": "text",
+                    "text": "言語設定",
+                    "weight": "bold",
+                    "size": "md",
+                    "color": "#FFFFFF",
+                },
+                {
+                    "type": "text",
+                    "text": "表示する記事の言語を選択してください",
+                    "size": "xs",
+                    "color": "#FFFFFF",
+                    "margin": "sm",
+                }
+            ],
+            "backgroundColor": "#4A90D9",
+            "paddingAll": "12px",
+        },
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": buttons,
+            "paddingAll": "12px",
+        },
+    }

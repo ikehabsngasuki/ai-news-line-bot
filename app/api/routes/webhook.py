@@ -9,12 +9,23 @@ from app.services.line_service import (
     register_user,
     deactivate_user,
     send_text_message,
+    send_flex_message,
     add_favorite,
     remove_favorite,
     get_user_favorites,
     ensure_user_registered,
+    get_user_settings,
+    update_user_delivery_hour,
+    toggle_user_category,
+    update_user_language,
 )
-from app.utils.flex_message import create_favorites_list
+from app.utils.flex_message import (
+    create_favorites_list,
+    create_settings_menu,
+    create_time_selector,
+    create_category_selector,
+    create_language_selector,
+)
 
 router = APIRouter()
 
@@ -113,6 +124,9 @@ async def handle_message(event: dict, user_id: str) -> None:
         from app.services.scheduler import send_daily_news_to_user
         await send_daily_news_to_user(user_id)
 
+    elif text == "設定":
+        await show_settings(user_id)
+
     elif text == "ヘルプ" or text == "help":
         await send_help(user_id)
 
@@ -122,6 +136,7 @@ async def handle_message(event: dict, user_id: str) -> None:
             "以下のコマンドが使えます:\n"
             "- 「お気に入り」: 保存した記事を表示\n"
             "- 「ニュース」: 最新ニュースを表示\n"
+            "- 「設定」: 配信設定を変更\n"
             "- 「ヘルプ」: 使い方を確認"
         )
 
@@ -165,6 +180,66 @@ async def handle_postback(event: dict, user_id: str) -> None:
     elif action == "help":
         await send_help(user_id)
 
+    # ========== 設定関連 ==========
+    elif action == "settings":
+        await show_settings(user_id)
+
+    elif action == "show_time_selector":
+        flex_content = create_time_selector()
+        await send_flex_message(user_id, "配信時間を選択", flex_content)
+
+    elif action == "set_hour":
+        hour = int(params.get("hour", 8))
+        success = await update_user_delivery_hour(user_id, hour)
+        if success:
+            await send_text_message(user_id, f"配信時間を {hour}:00 に設定しました。")
+            await show_settings(user_id)
+        else:
+            await send_text_message(user_id, "設定の更新に失敗しました。")
+
+    elif action == "show_category_selector":
+        user_settings = await get_user_settings(user_id)
+        if user_settings:
+            flex_content = create_category_selector(user_settings)
+            await send_flex_message(user_id, "カテゴリを選択", flex_content)
+        else:
+            await send_text_message(user_id, "設定の取得に失敗しました。")
+
+    elif action == "toggle_category":
+        category = params.get("category", "")
+        new_state = await toggle_user_category(user_id, category)
+        if new_state is not None:
+            from app.models.user_settings import CATEGORY_LABELS
+            cat_label = CATEGORY_LABELS.get(category, category)
+            state_text = "ON" if new_state else "OFF"
+            await send_text_message(user_id, f"「{cat_label}」を {state_text} にしました。")
+            # カテゴリ選択画面を再表示
+            user_settings = await get_user_settings(user_id)
+            if user_settings:
+                flex_content = create_category_selector(user_settings)
+                await send_flex_message(user_id, "カテゴリを選択", flex_content)
+        else:
+            await send_text_message(user_id, "設定の更新に失敗しました。")
+
+    elif action == "show_language_selector":
+        user_settings = await get_user_settings(user_id)
+        if user_settings:
+            flex_content = create_language_selector(user_settings)
+            await send_flex_message(user_id, "言語を選択", flex_content)
+        else:
+            await send_text_message(user_id, "設定の取得に失敗しました。")
+
+    elif action == "set_language":
+        lang = params.get("lang", "both")
+        success = await update_user_language(user_id, lang)
+        if success:
+            from app.models.user_settings import LANGUAGE_LABELS
+            lang_label = LANGUAGE_LABELS.get(lang, lang)
+            await send_text_message(user_id, f"言語設定を「{lang_label}」に変更しました。")
+            await show_settings(user_id)
+        else:
+            await send_text_message(user_id, "設定の更新に失敗しました。")
+
 
 async def show_favorites(user_id: str) -> None:
     """お気に入り一覧表示"""
@@ -179,17 +254,28 @@ async def show_favorites(user_id: str) -> None:
     await send_flex_message(user_id, "お気に入り一覧", flex_content)
 
 
+async def show_settings(user_id: str) -> None:
+    """設定メニュー表示"""
+    user_settings = await get_user_settings(user_id)
+    if user_settings:
+        flex_content = create_settings_menu(user_settings)
+        await send_flex_message(user_id, "設定", flex_content)
+    else:
+        await send_text_message(user_id, "設定の取得に失敗しました。")
+
+
 async def send_help(user_id: str) -> None:
     """ヘルプメッセージ送信"""
     await send_text_message(
         user_id,
         "AI News Botの使い方\n\n"
         "【自動配信】\n"
-        "毎朝8時にAI技術の最新ニュースTOP5をお届けします。\n\n"
+        "設定した時間にAI技術の最新ニュースをお届けします。\n\n"
         "【お気に入り機能】\n"
         "記事の「保存」ボタンを押すと、後で読み返せます。\n\n"
         "【コマンド】\n"
         "「ニュース」: 最新ニュースを表示\n"
         "「お気に入り」: 保存した記事を表示\n"
+        "「設定」: 配信時間/カテゴリ/言語を変更\n"
         "「ヘルプ」: この説明を表示"
     )

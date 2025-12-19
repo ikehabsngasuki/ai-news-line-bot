@@ -2,6 +2,7 @@ from app.models.database import Base, engine, async_session, init_db, get_sessio
 from app.models.user import User
 from app.models.article import Article
 from app.models.favorite import Favorite
+from app.models.user_settings import UserSettings, CATEGORY_LABELS, LANGUAGE_LABELS, DEFAULT_CATEGORIES
 
 __all__ = [
     "Base",
@@ -12,4 +13,8 @@ __all__ = [
     "User",
     "Article",
     "Favorite",
+    "UserSettings",
+    "CATEGORY_LABELS",
+    "LANGUAGE_LABELS",
+    "DEFAULT_CATEGORIES",
 ]

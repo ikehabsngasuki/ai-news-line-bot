@@ -1,6 +1,8 @@
+import json
 import uuid
 import asyncio
-from typing import Optional
+from datetime import datetime
+from typing import Optional, List
 
 import pytz
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -24,20 +26,19 @@ def setup_scheduler():
     scheduler = AsyncIOScheduler()
     jst = pytz.timezone(settings.timezone)
 
-    # 毎朝8時に実行
+    # 毎時0分に実行（ユーザーごとの配信時間に対応）
     scheduler.add_job(
-        daily_news_broadcast,
+        hourly_news_delivery,
         CronTrigger(
-            hour=settings.daily_delivery_hour,
-            minute=settings.daily_delivery_minute,
+            minute=0,
             timezone=jst,
         ),
-        id="daily_news_broadcast",
+        id="hourly_news_delivery",
         replace_existing=True,
     )
 
     scheduler.start()
-    print(f"Scheduler started: Daily news at {settings.daily_delivery_hour}:{settings.daily_delivery_minute:02d} JST")
+    print("Scheduler started: Hourly news delivery enabled")
 
 
 def shutdown_scheduler():
@@ -48,51 +49,100 @@ def shutdown_scheduler():
         print("Scheduler shutdown complete")
 
 
-async def daily_news_broadcast():
-    """毎朝のニュース配信ジョブ"""
+async def hourly_news_delivery():
+    """毎時のニュース配信ジョブ（ユーザー設定に基づく）"""
     from app.services.social_scorer import get_top_articles
-    from app.services.line_service import broadcast_flex_message
+    from app.services.line_service import send_flex_message, get_users_by_delivery_hour
 
-    print("Daily news broadcast started...")
+    jst = pytz.timezone(settings.timezone)
+    current_hour = datetime.now(jst).hour
+
+    print(f"Hourly news delivery started for {current_hour}:00 JST...")
 
     try:
-        # 人気記事取得
-        top_articles = await get_top_articles(count=settings.max_articles_per_delivery)
+        # この時間に配信するユーザーを取得
+        users = await get_users_by_delivery_hour(current_hour)
+        print(f"Users to deliver: {len(users)}")
 
-        if not top_articles:
-            print("No articles found for broadcast")
+        if not users:
+            print(f"No users scheduled for {current_hour}:00")
             return
 
-        # DBに記事を保存（お気に入り機能用）
-        await _save_articles_to_db(top_articles)
+        # 各ユーザーに配信
+        for user_data in users:
+            line_user_id = user_data[0]
+            categories_json = user_data[1]
+            language = user_data[2] or "both"
 
-        # Flex Message生成
-        flex_content = create_news_carousel(top_articles)
+            # カテゴリをパース
+            categories = None
+            if categories_json:
+                try:
+                    categories = json.loads(categories_json) if isinstance(categories_json, str) else categories_json
+                except json.JSONDecodeError:
+                    categories = None
 
-        # ブロードキャスト
-        await broadcast_flex_message(
-            alt_text=f"本日のAIニュース TOP{len(top_articles)}",
-            flex_content=flex_content,
-        )
+            try:
+                # ユーザー設定に基づいて記事取得
+                top_articles = await get_top_articles(
+                    count=settings.max_articles_per_delivery,
+                    categories=categories,
+                    language=language,
+                )
 
-        print(f"Broadcast complete: {len(top_articles)} articles")
+                if not top_articles:
+                    print(f"No articles for user {line_user_id[:8]}...")
+                    continue
+
+                # DBに記事を保存
+                await _save_articles_to_db(top_articles)
+
+                # Flex Message送信
+                flex_content = create_news_carousel(top_articles)
+                await send_flex_message(
+                    line_user_id,
+                    f"本日のAIニュース TOP{len(top_articles)}",
+                    flex_content,
+                )
+
+                print(f"Delivered to {line_user_id[:8]}...: {len(top_articles)} articles")
+
+            except Exception as e:
+                print(f"Delivery error for {line_user_id[:8]}...: {e}")
+                continue
+
+        print(f"Hourly delivery complete for {current_hour}:00")
 
     except Exception as e:
-        print(f"Broadcast error: {e}")
+        print(f"Hourly delivery error: {e}")
         raise
 
 
 async def send_daily_news_to_user(user_id: str):
-    """特定ユーザーにニュースを送信"""
+    """特定ユーザーにニュースを送信（ユーザー設定に基づく）"""
     from app.services.social_scorer import get_top_articles
-    from app.services.line_service import send_flex_message
+    from app.services.line_service import send_flex_message, get_user_settings
 
     try:
-        top_articles = await get_top_articles(count=settings.max_articles_per_delivery)
+        # ユーザー設定を取得
+        user_settings = await get_user_settings(user_id)
+        categories = None
+        language = "both"
+
+        if user_settings:
+            categories = user_settings.get_categories()
+            language = user_settings.language
+
+        # ユーザー設定に基づいて記事取得
+        top_articles = await get_top_articles(
+            count=settings.max_articles_per_delivery,
+            categories=categories,
+            language=language,
+        )
 
         if not top_articles:
             from app.services.line_service import send_text_message
-            await send_text_message(user_id, "現在配信できるニュースがありません。")
+            await send_text_message(user_id, "現在配信できるニュースがありません。\n設定を変更すると、より多くの記事が表示される場合があります。")
             return
 
         # DBに記事を保存

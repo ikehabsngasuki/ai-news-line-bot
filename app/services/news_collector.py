@@ -43,6 +43,30 @@ RSS_FEEDS = [
 # Hacker News API
 HN_API_BASE = "https://hacker-news.firebaseio.com/v0"
 
+# カテゴリごとのキーワード定義
+CATEGORY_KEYWORDS = {
+    "llm": [
+        "gpt", "llm", "chatgpt", "claude", "gemini", "llama", "openai", "anthropic",
+        "language model", "transformer", "mistral", "phi-", "qwen", "deepseek",
+        "chat bot", "chatbot", "copilot", "rag", "fine-tun", "prompt"
+    ],
+    "image": [
+        "stable diffusion", "dall-e", "midjourney", "sora", "imagen", "flux",
+        "image generat", "video generat", "diffusion", "text-to-image", "text-to-video",
+        "generative art", "ai art", "controlnet", "lora", "comfyui"
+    ],
+    "robotics": [
+        "robot", "autonomous", "self-driving", "tesla bot", "boston dynamics",
+        "humanoid", "drone", "waymo", "cruise", "optimus", "figure", "1x",
+        "embodied ai", "manipulation", "locomotion"
+    ],
+    "infrastructure": [
+        "gpu", "tpu", "nvidia", "chip", "semiconductor", "h100", "h200", "b100",
+        "cuda", "inference", "training", "datacenter", "data center", "amd", "intel",
+        "groq", "cerebras", "habana", "gaudi"
+    ],
+}
+
 
 class NewsCollector:
     def __init__(self):

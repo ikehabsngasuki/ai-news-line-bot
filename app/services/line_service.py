@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import User, Article, Favorite, async_session
+from app.models import User, Article, Favorite, UserSettings, async_session
 
 
 configuration = Configuration(access_token=settings.line_channel_access_token)
@@ -219,3 +219,157 @@ async def get_user_favorites(line_user_id: str) -> List[Article]:
             .order_by(Favorite.created_at.desc())
         )
         return list(result.scalars().all())
+
+
+# ==================== ユーザー設定関連 ====================
+
+async def get_user_settings(line_user_id: str) -> Optional[UserSettings]:
+    """ユーザー設定を取得（なければデフォルト値で作成）"""
+    async with async_session() as session:
+        # ユーザー取得
+        result = await session.execute(
+            select(User).where(User.line_user_id == line_user_id)
+        )
+        user = result.scalar_one_or_none()
+        if not user:
+            return None
+
+        # 設定取得
+        result = await session.execute(
+            select(UserSettings).where(UserSettings.user_id == user.id)
+        )
+        settings_obj = result.scalar_one_or_none()
+
+        # なければ作成
+        if not settings_obj:
+            settings_obj = UserSettings(
+                id=str(uuid.uuid4()),
+                user_id=user.id,
+            )
+            session.add(settings_obj)
+            await session.commit()
+            await session.refresh(settings_obj)
+
+        return settings_obj
+
+
+async def update_user_delivery_hour(line_user_id: str, hour: int) -> bool:
+    """配信時間を更新"""
+    if not 0 <= hour <= 23:
+        return False
+
+    async with async_session() as session:
+        result = await session.execute(
+            select(User).where(User.line_user_id == line_user_id)
+        )
+        user = result.scalar_one_or_none()
+        if not user:
+            return False
+
+        result = await session.execute(
+            select(UserSettings).where(UserSettings.user_id == user.id)
+        )
+        settings_obj = result.scalar_one_or_none()
+
+        if not settings_obj:
+            settings_obj = UserSettings(
+                id=str(uuid.uuid4()),
+                user_id=user.id,
+                delivery_hour=hour,
+            )
+            session.add(settings_obj)
+        else:
+            settings_obj.delivery_hour = hour
+
+        await session.commit()
+        return True
+
+
+async def toggle_user_category(line_user_id: str, category: str) -> Optional[bool]:
+    """カテゴリのON/OFFを切り替え。戻り値は切り替え後の状態（Noneはエラー）"""
+    async with async_session() as session:
+        result = await session.execute(
+            select(User).where(User.line_user_id == line_user_id)
+        )
+        user = result.scalar_one_or_none()
+        if not user:
+            return None
+
+        result = await session.execute(
+            select(UserSettings).where(UserSettings.user_id == user.id)
+        )
+        settings_obj = result.scalar_one_or_none()
+
+        if not settings_obj:
+            settings_obj = UserSettings(
+                id=str(uuid.uuid4()),
+                user_id=user.id,
+            )
+            session.add(settings_obj)
+            await session.flush()
+
+        new_state = settings_obj.toggle_category(category)
+        await session.commit()
+        return new_state
+
+
+async def update_user_language(line_user_id: str, language: str) -> bool:
+    """言語設定を更新"""
+    if language not in ("ja", "en", "both"):
+        return False
+
+    async with async_session() as session:
+        result = await session.execute(
+            select(User).where(User.line_user_id == line_user_id)
+        )
+        user = result.scalar_one_or_none()
+        if not user:
+            return False
+
+        result = await session.execute(
+            select(UserSettings).where(UserSettings.user_id == user.id)
+        )
+        settings_obj = result.scalar_one_or_none()
+
+        if not settings_obj:
+            settings_obj = UserSettings(
+                id=str(uuid.uuid4()),
+                user_id=user.id,
+                language=language,
+            )
+            session.add(settings_obj)
+        else:
+            settings_obj.language = language
+
+        await session.commit()
+        return True
+
+
+async def get_users_by_delivery_hour(hour: int) -> List[tuple]:
+    """指定時間に配信設定しているアクティブユーザーを取得
+
+    Returns:
+        List[tuple]: [(line_user_id, categories, language), ...]
+    """
+    async with async_session() as session:
+        # 設定があるユーザー
+        result = await session.execute(
+            select(User.line_user_id, UserSettings.categories, UserSettings.language)
+            .join(UserSettings, UserSettings.user_id == User.id)
+            .where(User.is_active == True)
+            .where(UserSettings.delivery_hour == hour)
+        )
+        users_with_settings = list(result.all())
+
+        # 設定がないユーザー（デフォルト8時）
+        if hour == 8:
+            result = await session.execute(
+                select(User.line_user_id)
+                .outerjoin(UserSettings, UserSettings.user_id == User.id)
+                .where(User.is_active == True)
+                .where(UserSettings.id == None)
+            )
+            users_without_settings = [(row[0], None, "both") for row in result.all()]
+            users_with_settings.extend(users_without_settings)
+
+        return users_with_settings

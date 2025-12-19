@@ -1,10 +1,11 @@
+import re
 import asyncio
-from typing import Dict, List
+from typing import Dict, List, Optional
 from dataclasses import dataclass
 
 import httpx
 
-from app.services.news_collector import CollectedArticle
+from app.services.news_collector import CollectedArticle, CATEGORY_KEYWORDS
 
 
 @dataclass
@@ -111,8 +112,60 @@ class SocialScorer:
         return 0
 
 
-async def get_top_articles(count: int = 5) -> List[ScoredArticle]:
-    """人気記事Top Nを取得"""
+def detect_language(text: str) -> str:
+    """テキストの言語を判定（日本語/英語）"""
+    # 日本語文字（ひらがな/カタカナ/漢字）を含むか判定
+    if re.search(r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]', text):
+        return "ja"
+    return "en"
+
+
+def match_category(text: str, categories: List[str]) -> bool:
+    """テキストが指定カテゴリのキーワードにマッチするか判定"""
+    if not categories:
+        return False
+
+    text_lower = text.lower()
+    for category in categories:
+        keywords = CATEGORY_KEYWORDS.get(category, [])
+        for keyword in keywords:
+            if keyword in text_lower:
+                return True
+    return False
+
+
+def filter_articles(
+    articles: List[ScoredArticle],
+    categories: Optional[List[str]] = None,
+    language: str = "both"
+) -> List[ScoredArticle]:
+    """記事をカテゴリと言語でフィルタリング"""
+    filtered = []
+
+    for article in articles:
+        # カテゴリフィルター（設定があれば適用）
+        if categories:
+            search_text = f"{article.title} {article.summary}"
+            if not match_category(search_text, categories):
+                continue
+
+        # 言語フィルター
+        if language != "both":
+            article_lang = detect_language(article.title)
+            if article_lang != language:
+                continue
+
+        filtered.append(article)
+
+    return filtered
+
+
+async def get_top_articles(
+    count: int = 5,
+    categories: Optional[List[str]] = None,
+    language: str = "both"
+) -> List[ScoredArticle]:
+    """人気記事Top Nを取得（フィルタリング対応）"""
     from app.services.news_collector import NewsCollector
     from app.config import settings
 
@@ -127,6 +180,11 @@ async def get_top_articles(count: int = 5) -> List[ScoredArticle]:
         # スコアリング
         scored_articles = await scorer.score_articles(articles)
         print(f"スコアリング完了: {len(scored_articles)}件")
+
+        # フィルタリング（カテゴリ/言語）
+        if categories or language != "both":
+            scored_articles = filter_articles(scored_articles, categories, language)
+            print(f"フィルタリング後: {len(scored_articles)}件 (categories={categories}, language={language})")
 
         # Top N返却
         return scored_articles[:count]
