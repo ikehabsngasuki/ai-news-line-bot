@@ -548,3 +548,83 @@ def create_language_selector(settings: "UserSettings") -> dict:
             "paddingAll": "12px",
         },
     }
+
+
+def create_main_menu() -> dict:
+    """メインメニューFlex Message（ボタン操作用）"""
+    return {
+        "type": "bubble",
+        "size": "kilo",
+        "header": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {
+                    "type": "text",
+                    "text": "AI News Bot",
+                    "weight": "bold",
+                    "size": "lg",
+                    "color": "#FFFFFF",
+                },
+                {
+                    "type": "text",
+                    "text": "メニューから選択してください",
+                    "size": "xs",
+                    "color": "#FFFFFF",
+                    "margin": "sm",
+                }
+            ],
+            "backgroundColor": "#4A90D9",
+            "paddingAll": "12px",
+        },
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {
+                    "type": "button",
+                    "action": {
+                        "type": "postback",
+                        "label": "今日のニュース",
+                        "data": "action=today_news",
+                    },
+                    "style": "primary",
+                    "height": "sm",
+                },
+                {
+                    "type": "button",
+                    "action": {
+                        "type": "postback",
+                        "label": "お気に入り一覧",
+                        "data": "action=show_favorites",
+                    },
+                    "style": "secondary",
+                    "height": "sm",
+                    "margin": "sm",
+                },
+                {
+                    "type": "button",
+                    "action": {
+                        "type": "postback",
+                        "label": "設定",
+                        "data": "action=settings",
+                    },
+                    "style": "secondary",
+                    "height": "sm",
+                    "margin": "sm",
+                },
+                {
+                    "type": "button",
+                    "action": {
+                        "type": "postback",
+                        "label": "ヘルプ",
+                        "data": "action=help",
+                    },
+                    "style": "link",
+                    "height": "sm",
+                    "margin": "md",
+                },
+            ],
+            "paddingAll": "12px",
+        },
+    }

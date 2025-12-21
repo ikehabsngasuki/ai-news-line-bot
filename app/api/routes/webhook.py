@@ -25,6 +25,7 @@ from app.utils.flex_message import (
     create_time_selector,
     create_category_selector,
     create_language_selector,
+    create_main_menu,
 )
 
 router = APIRouter()
@@ -95,11 +96,11 @@ async def handle_follow(user_id: str) -> None:
         user_id,
         "友だち追加ありがとうございます!\n\n"
         "毎朝8時にAI技術の最新ニュースTOP5をお届けします。\n\n"
-        "メニューから以下の操作ができます:\n"
-        "- お気に入り一覧: 保存した記事を確認\n"
-        "- 今日のニュース: 最新ニュースを再表示\n"
-        "- ヘルプ: 使い方を確認"
+        "何かメッセージを送ると、メニューが表示されます。"
     )
+    # メインメニューを表示
+    flex_content = create_main_menu()
+    await send_flex_message(user_id, "メニュー", flex_content)
 
 
 async def handle_unfollow(user_id: str) -> None:
@@ -108,37 +109,16 @@ async def handle_unfollow(user_id: str) -> None:
 
 
 async def handle_message(event: dict, user_id: str) -> None:
-    """メッセージイベント処理"""
+    """メッセージイベント処理 - テキスト入力時はメインメニューを表示"""
     message = event.get("message", {})
     message_type = message.get("type")
 
     if message_type != "text":
         return
 
-    text = message.get("text", "").strip()
-
-    if text == "お気に入り一覧" or text == "お気に入り":
-        await show_favorites(user_id)
-
-    elif text == "今日のニュース" or text == "ニュース":
-        from app.services.scheduler import send_daily_news_to_user
-        await send_daily_news_to_user(user_id)
-
-    elif text == "設定":
-        await show_settings(user_id)
-
-    elif text == "ヘルプ" or text == "help":
-        await send_help(user_id)
-
-    else:
-        await send_text_message(
-            user_id,
-            "以下のコマンドが使えます:\n"
-            "- 「お気に入り」: 保存した記事を表示\n"
-            "- 「ニュース」: 最新ニュースを表示\n"
-            "- 「設定」: 配信設定を変更\n"
-            "- 「ヘルプ」: 使い方を確認"
-        )
+    # どんなテキストでもメインメニューを表示
+    flex_content = create_main_menu()
+    await send_flex_message(user_id, "メニュー", flex_content)
 
 
 async def handle_postback(event: dict, user_id: str) -> None:
@@ -273,9 +253,7 @@ async def send_help(user_id: str) -> None:
         "設定した時間にAI技術の最新ニュースをお届けします。\n\n"
         "【お気に入り機能】\n"
         "記事の「保存」ボタンを押すと、後で読み返せます。\n\n"
-        "【コマンド】\n"
-        "「ニュース」: 最新ニュースを表示\n"
-        "「お気に入り」: 保存した記事を表示\n"
-        "「設定」: 配信時間/カテゴリ/言語を変更\n"
-        "「ヘルプ」: この説明を表示"
+        "【操作方法】\n"
+        "メニューのボタンから各機能を利用できます。\n"
+        "何かメッセージを送るとメニューが表示されます。"
     )
